@@ -263,64 +263,275 @@ def compute_features(df: DataFrame, feature_list: list[str] | None = None) -> Da
     if isinstance(volume, pd.DataFrame):
         volume = volume.iloc[:, 0]
 
-    # Enhanced Returns with momentum
-    if "return_5m" in feature_list:
-        ret_5m = close.pct_change(5)
-        features["return_5m"] = ret_5m.replace([np.inf, -np.inf], [2.0, -2.0]).fillna(0).clip(-2.0, 2.0)
-    if "return_15m" in feature_list:
-        ret_15m = close.pct_change(15)
-        features["return_15m"] = ret_15m.replace([np.inf, -np.inf], [2.0, -2.0]).fillna(0).clip(-2.0, 2.0)
-    if "return_60m" in feature_list:
-        ret_60m = close.pct_change(60)
-        features["return_60m"] = ret_60m.replace([np.inf, -np.inf], [2.0, -2.0]).fillna(0).clip(-2.0, 2.0)
+    # Enhanced Returns with momentum (daily basis)
+    if "return_1d" in feature_list:
+        ret_1d = close.pct_change(1)
+        features["return_1d"] = ret_1d.replace([np.inf, -np.inf], [2.0, -2.0]).fillna(0).clip(-2.0, 2.0)
+    if "return_3d" in feature_list:
+        ret_3d = close.pct_change(3)
+        features["return_3d"] = ret_3d.replace([np.inf, -np.inf], [2.0, -2.0]).fillna(0).clip(-2.0, 2.0)
+    if "return_5d" in feature_list:
+        ret_5d = close.pct_change(5)
+        features["return_5d"] = ret_5d.replace([np.inf, -np.inf], [2.0, -2.0]).fillna(0).clip(-2.0, 2.0)
+    if "return_10d" in feature_list:
+        ret_10d = close.pct_change(10)
+        features["return_10d"] = ret_10d.replace([np.inf, -np.inf], [2.0, -2.0]).fillna(0).clip(-2.0, 2.0)
+    if "return_20d" in feature_list:
+        ret_20d = close.pct_change(20)
+        features["return_20d"] = ret_20d.replace([np.inf, -np.inf], [2.0, -2.0]).fillna(0).clip(-2.0, 2.0)
+
+    # Momentum features (daily basis)
+    if "momentum_1d" in feature_list:
+        features["momentum_1d"] = close / close.shift(1) - 1
+    if "momentum_5d" in feature_list:
+        features["momentum_5d"] = close / close.shift(5) - 1
+    if "momentum_10d" in feature_list:
+        features["momentum_10d"] = close / close.shift(10) - 1
 
     # Momentum acceleration (rate of change of returns)
-    if "return_5m" in feature_list and "momentum_accel" in feature_list:
-        accel = features["return_5m"].diff(5)  # Acceleration of 5m returns
+    if "return_5d" in feature_list and "momentum_accel" in feature_list:
+        accel = features["return_5d"].diff(5)  # Acceleration of 5d returns
         features["momentum_accel"] = accel.replace([np.inf, -np.inf], 0).fillna(0).clip(-1.0, 1.0)
 
-    # EMA
+    # Simple Moving Averages
+    if "sma_5" in feature_list:
+        features["sma_5"] = close.rolling(window=5).mean()
+    if "sma_10" in feature_list:
+        features["sma_10"] = close.rolling(window=10).mean()
+    if "sma_20" in feature_list:
+        features["sma_20"] = close.rolling(window=20).mean()
+    if "sma_50" in feature_list:
+        features["sma_50"] = close.rolling(window=50).mean()
+    if "sma_200" in feature_list:
+        features["sma_200"] = close.rolling(window=200).mean()
+
+    # Exponential Moving Averages
+    if "ema_5" in feature_list:
+        features["ema_5"] = _calculate_ema(close, span=5)
     if "ema_10" in feature_list:
         features["ema_10"] = _calculate_ema(close, span=10)
-    if "ema_30" in feature_list:
-        features["ema_30"] = _calculate_ema(close, span=30)
+    if "ema_20" in feature_list:
+        features["ema_20"] = _calculate_ema(close, span=20)
     if "ema_50" in feature_list:
         features["ema_50"] = _calculate_ema(close, span=50)
+    if "ema_200" in feature_list:
+        features["ema_200"] = _calculate_ema(close, span=200)
 
-    # RSI
+    # Weighted Moving Averages
+    if "wma_10" in feature_list:
+        weights = np.arange(1, 11)
+        features["wma_10"] = close.rolling(10).apply(lambda x: np.dot(x, weights) / weights.sum(), raw=False)
+    if "wma_20" in feature_list:
+        weights = np.arange(1, 21)
+        features["wma_20"] = close.rolling(20).apply(lambda x: np.dot(x, weights) / weights.sum(), raw=False)
+
+    # RSI (multiple timeframes)
+    if "rsi_6" in feature_list:
+        rsi = ta.momentum.RSIIndicator(close=close, window=6)
+        features["rsi_6"] = rsi.rsi()
     if "rsi_14" in feature_list:
         rsi = ta.momentum.RSIIndicator(close=close, window=14)
         features["rsi_14"] = rsi.rsi()
-    if "rsi_7" in feature_list:
-        rsi = ta.momentum.RSIIndicator(close=close, window=7)
-        features["rsi_7"] = rsi.rsi()
+    if "rsi_21" in feature_list:
+        rsi = ta.momentum.RSIIndicator(close=close, window=21)
+        features["rsi_21"] = rsi.rsi()
 
-    # MACD (use MACD line minus signal line as single feature)
-    if "macd" in feature_list:
-        macd_ind = ta.trend.MACD(close=close, window_slow=26, window_fast=12, window_sign=9)
-        features["macd"] = macd_ind.macd() - macd_ind.macd_signal()
+    # Stochastic Oscillators
+    if "stoch_k" in feature_list or "stoch_d" in feature_list:
+        stoch = ta.momentum.StochasticOscillator(high=high, low=low, close=close, window=14, smooth_window=3)
+        if "stoch_k" in feature_list:
+            features["stoch_k"] = stoch.stoch()
+        if "stoch_d" in feature_list:
+            features["stoch_d"] = stoch.stoch_signal()
 
-    # ADX
-    if "adx_14" in feature_list:
-        adx_ind = ta.trend.ADXIndicator(high=high, low=low, close=close, window=14)
-        features["adx_14"] = adx_ind.adx()
+    # Williams %R
+    if "williams_r" in feature_list:
+        williams = ta.momentum.WilliamsRIndicator(high=high, low=low, close=close, lbp=14)
+        features["williams_r"] = williams.williams_r()
 
-    # Volatility estimators
-    if "parkinson_vol_30m" in feature_list:
-        features["parkinson_vol_30m"] = _calculate_parkinson_vol(high, low, window=30)
-    if "garman_klass_vol_30m" in feature_list:
-        features["garman_klass_vol_30m"] = _calculate_garman_klass_vol(open_, high, low, close, window=30)
+    # Commodity Channel Index (CCI)
+    if "cci_14" in feature_list:
+        cci = ta.trend.CCIIndicator(high=high, low=low, close=close, window=14)
+        features["cci_14"] = cci.cci()
+    if "cci_20" in feature_list:
+        cci = ta.trend.CCIIndicator(high=high, low=low, close=close, window=20)
+        features["cci_20"] = cci.cci()
+
+    # MACD
+    if "macd" in feature_list or "macd_signal" in feature_list or "macd_hist" in feature_list:
+        macd = ta.trend.MACD(close=close, window_slow=26, window_fast=12, window_sign=9)
+        if "macd" in feature_list:
+            features["macd"] = macd.macd()
+        if "macd_signal" in feature_list:
+            features["macd_signal"] = macd.macd_signal()
+        if "macd_hist" in feature_list:
+            features["macd_hist"] = macd.macd_diff()
+
+    # Money Flow Index (MFI)
+    if "mfi_14" in feature_list:
+        mfi = ta.volume.MFIIndicator(high=high, low=low, close=close, volume=volume, window=14)
+        features["mfi_14"] = mfi.money_flow_index()
+
+    # Volatility Indicators - ATR
     if "atr_14" in feature_list:
-        atr_ind = ta.volatility.AverageTrueRange(high=high, low=low, close=close, window=14)
-        features["atr_14"] = atr_ind.average_true_range()
-    if "vol_ratio_30m" in feature_list:
-        gk_vol = _calculate_garman_klass_vol(open_, high, low, close, window=30)
-        pk_vol = _calculate_parkinson_vol(high, low, window=30)
-        # Avoid division by zero and handle NaN
-        ratio = gk_vol / pk_vol.replace(0, np.nan)
-        features["vol_ratio_30m"] = ratio.fillna(1.0)  # Neutral ratio when undefined
-    if "vol_of_vol_30m" in feature_list:
-        vol_series = _calculate_garman_klass_vol(open_, high, low, close, window=30)
+        atr = ta.volatility.AverageTrueRange(high=high, low=low, close=close, window=14)
+        features["atr_14"] = atr.average_true_range()
+    if "atr_20" in feature_list:
+        atr = ta.volatility.AverageTrueRange(high=high, low=low, close=close, window=20)
+        features["atr_20"] = atr.average_true_range()
+
+    # Bollinger Bands
+    if any(x in feature_list for x in ["bb_upper_20", "bb_middle_20", "bb_lower_20", "bb_pct_20", "bb_width_20"]):
+        bb = ta.volatility.BollingerBands(close=close, window=20, window_dev=2)
+        if "bb_upper_20" in feature_list:
+            features["bb_upper_20"] = bb.bollinger_hband()
+        if "bb_middle_20" in feature_list:
+            features["bb_middle_20"] = bb.bollinger_mavg()
+        if "bb_lower_20" in feature_list:
+            features["bb_lower_20"] = bb.bollinger_lband()
+        if "bb_pct_20" in feature_list:
+            features["bb_pct_20"] = bb.bollinger_pband()
+        if "bb_width_20" in feature_list:
+            features["bb_width_20"] = bb.bollinger_wband()
+
+    if any(x in feature_list for x in ["bb_upper_10", "bb_middle_10", "bb_lower_10", "bb_pct_10", "bb_width_10"]):
+        bb = ta.volatility.BollingerBands(close=close, window=10, window_dev=2)
+        if "bb_upper_10" in feature_list:
+            features["bb_upper_10"] = bb.bollinger_hband()
+        if "bb_middle_10" in feature_list:
+            features["bb_middle_10"] = bb.bollinger_mavg()
+        if "bb_lower_10" in feature_list:
+            features["bb_lower_10"] = bb.bollinger_lband()
+        if "bb_pct_10" in feature_list:
+            features["bb_pct_10"] = bb.bollinger_pband()
+        if "bb_width_10" in feature_list:
+            features["bb_width_10"] = bb.bollinger_wband()
+
+    # Keltner Channels
+    if any(x in feature_list for x in ["keltner_upper_20", "keltner_middle_20", "keltner_lower_20", "keltner_pct_20"]):
+        keltner = ta.volatility.KeltnerChannel(high=high, low=low, close=close, window=20, window_atr=10)
+        if "keltner_upper_20" in feature_list:
+            features["keltner_upper_20"] = keltner.keltner_channel_hband()
+        if "keltner_middle_20" in feature_list:
+            features["keltner_middle_20"] = keltner.keltner_channel_mband()
+        if "keltner_lower_20" in feature_list:
+            features["keltner_lower_20"] = keltner.keltner_channel_lband()
+        if "keltner_pct_20" in feature_list:
+            features["keltner_pct_20"] = keltner.keltner_channel_pband()
+
+    # ADX and DMI
+    if "adx_14" in feature_list or "dmi_plus_14" in feature_list or "dmi_minus_14" in feature_list:
+        adx_ind = ta.trend.ADXIndicator(high=high, low=low, close=close, window=14)
+        if "adx_14" in feature_list:
+            features["adx_14"] = adx_ind.adx()
+        if "dmi_plus_14" in feature_list:
+            features["dmi_plus_14"] = adx_ind.adx_pos()
+        if "dmi_minus_14" in feature_list:
+            features["dmi_minus_14"] = adx_ind.adx_neg()
+
+    # Aroon Oscillator
+    if "aroon_up_14" in feature_list or "aroon_down_14" in feature_list or "aroon_osc_14" in feature_list:
+        aroon = ta.trend.AroonIndicator(close=close, window=14)
+        if "aroon_up_14" in feature_list:
+            features["aroon_up_14"] = aroon.aroon_up()
+        if "aroon_down_14" in feature_list:
+            features["aroon_down_14"] = aroon.aroon_down()
+        if "aroon_osc_14" in feature_list:
+            features["aroon_osc_14"] = aroon.aroon_indicator()
+
+    # Ichimoku Cloud
+    if any(x in feature_list for x in ["ichimoku_tenkan", "ichimoku_kijun", "ichimoku_senkou_a", "ichimoku_senkou_b"]):
+        ichimoku = ta.trend.IchimokuIndicator(high=high, low=low, window1=9, window2=26, window3=52)
+        if "ichimoku_tenkan" in feature_list:
+            features["ichimoku_tenkan"] = ichimoku.ichimoku_conversion_line()
+        if "ichimoku_kijun" in feature_list:
+            features["ichimoku_kijun"] = ichimoku.ichimoku_base_line()
+        if "ichimoku_senkou_a" in feature_list:
+            features["ichimoku_senkou_a"] = ichimoku.ichimoku_a()
+        if "ichimoku_senkou_b" in feature_list:
+            features["ichimoku_senkou_b"] = ichimoku.ichimoku_b()
+
+    # Pivot Points
+    if "pivot_point" in feature_list or "resistance_1" in feature_list or "support_1" in feature_list:
+        # Calculate pivot point using previous day's data
+        pp = (high.shift(1) + low.shift(1) + close.shift(1)) / 3
+        if "pivot_point" in feature_list:
+            features["pivot_point"] = pp
+        if "resistance_1" in feature_list:
+            features["resistance_1"] = 2 * pp - low.shift(1)
+        if "support_1" in feature_list:
+            features["support_1"] = 2 * pp - high.shift(1)
+
+    # Volume Indicators
+    if "volume_sma_5" in feature_list:
+        features["volume_sma_5"] = volume.rolling(window=5).mean()
+    if "volume_sma_10" in feature_list:
+        features["volume_sma_10"] = volume.rolling(window=10).mean()
+    if "volume_sma_20" in feature_list:
+        features["volume_sma_20"] = volume.rolling(window=20).mean()
+
+    if "volume_ratio_5" in feature_list:
+        vol_sma = volume.rolling(window=5).mean()
+        features["volume_ratio_5"] = volume / vol_sma.replace(0, 1)
+    if "volume_ratio_10" in feature_list:
+        vol_sma = volume.rolling(window=10).mean()
+        features["volume_ratio_10"] = volume / vol_sma.replace(0, 1)
+    if "volume_ratio_20" in feature_list:
+        vol_sma = volume.rolling(window=20).mean()
+        features["volume_ratio_20"] = volume / vol_sma.replace(0, 1)
+
+    # VWAP
+    if "vwap" in feature_list:
+        features["vwap"] = _compute_vwap(high, low, close, volume)
+
+    # Additional Volume Indicators
+    if "accumulation_distribution" in feature_list:
+        features["accumulation_distribution"] = ta.volume.AccDistIndexIndicator(high=high, low=low, close=close, volume=volume).acc_dist_index()
+    if "chaikin_money_flow" in feature_list:
+        features["chaikin_money_flow"] = ta.volume.ChaikinMoneyFlowIndicator(high=high, low=low, close=close, volume=volume).chaikin_money_flow()
+    if "force_index" in feature_list:
+        features["force_index"] = ta.volume.ForceIndexIndicator(close=close, volume=volume).force_index()
+    if "ease_of_movement" in feature_list:
+        features["ease_of_movement"] = ta.volume.EaseOfMovementIndicator(high=high, low=low, volume=volume).ease_of_movement()
+    if "volume_price_trend" in feature_list:
+        features["volume_price_trend"] = ta.volume.VolumePriceTrendIndicator(close=close, volume=volume).volume_price_trend()
+
+    # Statistical Indicators
+    if "hurst_100" in feature_list:
+        features["hurst_100"] = _calculate_hurst_exponent(close, window=100)
+    if "hurst_200" in feature_list:
+        features["hurst_200"] = _calculate_hurst_exponent(close, window=200)
+
+    if "zscore_20" in feature_list:
+        features["zscore_20"] = (close - close.rolling(window=20).mean()) / close.rolling(window=20).std()
+    if "skew_20" in feature_list:
+        features["skew_20"] = close.rolling(window=20).skew()
+    if "kurtosis_20" in feature_list:
+        features["kurtosis_20"] = close.rolling(window=20).kurt()
+
+    # Market Breadth (using SPY as proxy - simplified)
+    if "market_trend_5" in feature_list:
+        features["market_trend_5"] = close.rolling(window=5).mean() / close.rolling(window=5).mean().shift(5) - 1
+    if "market_trend_20" in feature_list:
+        features["market_trend_20"] = close.rolling(window=20).mean() / close.rolling(window=20).mean().shift(20) - 1
+    if "market_strength" in feature_list:
+        features["market_strength"] = (close - close.rolling(window=20).min()) / (close.rolling(window=20).max() - close.rolling(window=20).min())
+
+    # Time-based features
+    if hasattr(close.index, 'dayofweek'):
+        if "day_of_week" in feature_list:
+            features["day_of_week"] = close.index.dayofweek / 6.0  # Normalize to 0-1
+        if "month_of_year" in feature_list:
+            features["month_of_year"] = close.index.month / 12.0  # Normalize to 0-1
+        if "quarter" in feature_list:
+            features["quarter"] = close.index.quarter / 4.0  # Normalize to 0-1
+
+    if "days_since_high_20" in feature_list:
+        rolling_max = close.rolling(window=20).max()
+        features["days_since_high_20"] = ((close - rolling_max).abs() / rolling_max).rolling(window=20).argmin()
+    if "days_since_low_20" in feature_list:
+        rolling_min = close.rolling(window=20).min()
+        features["days_since_low_20"] = ((close - rolling_min).abs() / rolling_min).rolling(window=20).argmin()
         features["vol_of_vol_30m"] = vol_series.rolling(window=30, min_periods=1).std().fillna(0)
 
     # Volume & flow
