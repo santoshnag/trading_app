@@ -86,7 +86,7 @@ def _triple_barrier_numba(prices: np.ndarray, profit_take: float, stop_loss: flo
                 out[idx] = -1.0
         return out
 
-    return _kernel(prices, profit_take, stop_loss, max_minutes)
+    return _kernel(prices, profit_take, stop_loss, max_periods)
 
 
 def triple_barrier_labels(

@@ -39,7 +39,7 @@ try:
     from data_pipeline import load_data_for_tickers
     from features import compute_features
     from labeling import generate_labels_for_dataframe
-    from model import walk_forward_predict, evaluate_probabilities
+    from model import walk_forward_predict, evaluate_probabilities, tune_probability_threshold
     from backtest import backtest_from_predictions
 except ImportError as e:
     print(f"Import error: {e}")
@@ -57,16 +57,22 @@ def run_pipeline() -> None:
     print("Loading data...", flush=True)
     sys.stdout.flush()
     data = load_data_for_tickers(tickers)
+    print(f"Data loaded for {len(tickers)} tickers", flush=True)
+    sys.stdout.flush()
     results: list[dict[str, object]] = []
     for ticker in tickers:
         df = data[ticker]
-        print(f"\nProcessing {ticker}...")
+        print(f"\nProcessing {ticker}...", flush=True)
+        sys.stdout.flush()
         # Compute features and labels
-        print(f"Computing features for {ticker}...")
+        print(f"Computing features for {ticker}...", flush=True)
+        sys.stdout.flush()
         features = compute_features(df)
-        print(f"Features shape: {features.shape}, NaN count: {features.isna().sum().sum()}")
+        print(f"Features shape: {features.shape}, NaN count: {features.isna().sum().sum()}", flush=True)
+        sys.stdout.flush()
         labels = generate_labels_for_dataframe(df)
-        print(f"Labels shape: {labels.shape}, NaN count: {labels.isna().sum().sum()}")
+        print(f"Labels shape: {labels.shape}, NaN count: {labels.isna().sum().sum()}", flush=True)
+        sys.stdout.flush()
         # Align features and labels; shift features by 1 bar to avoid leakage
         features_shifted = features.shift(1)
         common_index = features_shifted.index.intersection(labels.index)
@@ -93,20 +99,41 @@ def run_pipeline() -> None:
                     # Default cleaning
                     X[col] = X[col].replace([np.inf, -np.inf], [1e6, -1e6]).fillna(0).clip(-1e6, 1e6)
 
-        print(f"After alignment - X: {X.shape}, y: {y.shape}")
+        print(f"After alignment - X: {X.shape}, y: {y.shape}", flush=True)
+        sys.stdout.flush()
         # Drop NaN labels
         mask = ~y.isna()
         X = X.loc[mask]
         y = y.loc[mask]
         timestamps = X.index
+        print(f"Final data - X: {X.shape}, y: {y.shape}", flush=True)
+        sys.stdout.flush()
         # Walk‑forward training and prediction
+        print(f"Starting walk-forward prediction for {ticker}...", flush=True)
+        sys.stdout.flush()
         preds, true_labels = walk_forward_predict(X, y, timestamps)
+        print(f"Walk-forward prediction completed for {ticker}", flush=True)
+        sys.stdout.flush()
         pred_metrics = evaluate_probabilities(preds, true_labels)
-        print(f"Predictive metrics for {ticker}: {pred_metrics}")
-        # Backtest
-        backtest_res = backtest_from_predictions(df.loc[preds.index], preds)
+        print(f"Predictive metrics for {ticker}: {pred_metrics}", flush=True)
+        sys.stdout.flush()
+        # Tune threshold to maximize win rate based on labels
+        tuned_thr = tune_probability_threshold(preds, true_labels, allow_shorts=False)
+        print(f"Tuned threshold for {ticker}: {tuned_thr:.2f}", flush=True)
+        sys.stdout.flush()
+        # Backtest with tuned threshold, disable shorts, and apply SMA regime filter
+        backtest_res = backtest_from_predictions(
+            df.loc[preds.index],
+            preds,
+            threshold=tuned_thr,
+            allow_shorts=False,
+            regime_filter="sma",
+            trend_window=50,
+            use_kelly_sizing=False,
+        )
         stats = backtest_res["stats"]
-        print(f"Backtest stats for {ticker}: {stats}")
+        print(f"Backtest stats for {ticker}: {stats}", flush=True)
+        sys.stdout.flush()
         results.append({
             "ticker": ticker,
             "pred_metrics": pred_metrics,

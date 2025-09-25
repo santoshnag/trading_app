@@ -14,8 +14,8 @@ from datetime import datetime
 
 #: Tickers to download and analyse.  These should be liquid US equities or
 # ETFs.  You can add more symbols to this list.  Note that downloading minute
-# bars for many tickers can be time‑consuming., "MSFT", "TSLA", "NVDA", "GOOGL", "AMZN", "META"
-TICKERS: list[str] = ["SPY", "AAPL"]  # Major tech stocks for short-term trading
+# bars for many tickers can be time‑consuming."SPY", "AAPL", "MSFT", "TSLA", "NVDA", "GOOGL", "AMZN", "META"
+TICKERS: list[str] = ["SPY", "AAPL", "MSFT", "TSLA", "NVDA", "GOOGL", "AMZN", "META"]  # Major tech stocks for short-term trading
 
 #: The start and end dates for data collection.  Data outside this range will
 # not be downloaded.  Use ISO‑8601 strings (YYYY‑MM‑DD).
@@ -101,12 +101,12 @@ MAX_HOLD_DAYS: int = 20  # 20 trading days max hold for swing trades
 #: Type of model to train.  Options include "logistic" for logistic
 # regression and "xgboost" for gradient boosting.  See `model.py` for
 # details.
-MODEL_TYPE: str = "ensemble"  # Advanced ensemble for maximum win rates
+MODEL_TYPE: str = "xgboost"  # Optimized XGBoost for fast execution and high win rates
 
 #: Number of months to use for each training window in the walk‑forward
 # evaluation.  For example, `6` means train on 6 months of data and test on
 # the following month.
-TRAIN_WINDOW_MONTHS: int = 6  # Balanced training window
+TRAIN_WINDOW_MONTHS: int = 1  # Fast training for quick results
 
 #: Threshold on the predicted probability used to trigger trades in the
 # backtest.  Only predictions above this threshold will be considered long

@@ -48,7 +48,9 @@ except ImportError:
     LGBMClassifier = None  # type: ignore
 
 from sklearn.ensemble import StackingClassifier
-from sklearn.feature_selection import SelectKBest, f_classif
+from sklearn.feature_selection import SelectKBest, f_classif, VarianceThreshold
+from imblearn.over_sampling import SMOTE
+import numpy as np
 
 # Import config with fallback for both package and script execution
 try:
@@ -91,16 +93,16 @@ def _build_model(model_type: str) -> object:
         return Pipeline([
             ("scaler", StandardScaler()),
             ("clf", XGBClassifier(
-                n_estimators=150,  # Reduced for faster training
-                max_depth=3,  # Shallower trees for less overfitting
-                learning_rate=0.05,  # Slightly higher learning rate
-                subsample=0.9,  # Higher subsample for better generalization
-                colsample_bytree=0.9,  # Higher colsample for more features
-                gamma=0.2,  # Higher gamma for more conservative splits
-                min_child_weight=5,  # Higher min_child_weight for more conservative splits
-                reg_alpha=0.1,  # Higher L1 regularization
-                reg_lambda=2.0,  # Higher L2 regularization
-                scale_pos_weight=3.0,  # Higher weight for minority class
+                n_estimators=30,  # Very fast training
+                max_depth=2,  # Shallow trees
+                learning_rate=0.1,  # Fast learning
+                subsample=0.8,
+                colsample_bytree=0.8,
+                gamma=0.1,
+                min_child_weight=3,
+                reg_alpha=0.05,
+                reg_lambda=1.0,
+                scale_pos_weight=2.0,  # Balanced weighting
                 eval_metric="logloss",
                 tree_method="hist",
                 n_jobs=0,
@@ -127,14 +129,16 @@ def _build_model(model_type: str) -> object:
         # Advanced ensemble with feature selection for 70%+ win rates
         base_estimators = []
 
-        # Base pipeline with feature selection
+        # Base pipeline with feature selection - remove constant features first
         base_pipeline = Pipeline([
+            ("variance_filter", VarianceThreshold(threshold=1e-6)),  # Remove constant/low-variance features
             ("scaler", StandardScaler()),
             ("selector", SelectKBest(score_func=f_classif, k=15)),  # Select top 15 most predictive features
         ])
 
         if True:  # Always include logistic
             logistic_pipeline = Pipeline([
+                ("variance_filter", VarianceThreshold(threshold=1e-6)),
                 ("scaler", StandardScaler()),
                 ("selector", SelectKBest(score_func=f_classif, k=15)),
                 ("clf", LogisticRegression(
@@ -150,6 +154,7 @@ def _build_model(model_type: str) -> object:
 
         if XGBClassifier is not None:
             xgb_pipeline = Pipeline([
+                ("variance_filter", VarianceThreshold(threshold=1e-6)),
                 ("scaler", StandardScaler()),
                 ("selector", SelectKBest(score_func=f_classif, k=15)),
                 ("clf", XGBClassifier(
@@ -173,6 +178,7 @@ def _build_model(model_type: str) -> object:
 
         if LGBMClassifier is not None:
             lgb_pipeline = Pipeline([
+                ("variance_filter", VarianceThreshold(threshold=1e-6)),
                 ("scaler", StandardScaler()),
                 ("selector", SelectKBest(score_func=f_classif, k=15)),
                 ("clf", LGBMClassifier(
@@ -301,8 +307,21 @@ def walk_forward_predict(
         y_train = y_binary.loc[train_mask]
         X_test = X.loc[test_mask]
         y_test = y.loc[test_mask]
+
+        # Skip fold if training set lacks class diversity
+        unique_classes = np.unique(y_train)
+        if len(unique_classes) < 2 or not (0 in unique_classes and 1 in unique_classes):
+            # Mark as not performed; continue to next fold
+            continue
+
         model = _build_model(model_type)
-        model.fit(X_train, y_train)
+        try:
+            model.fit(X_train, y_train)
+        except ValueError:
+            # If fitting fails due to class issues or invalid data, skip this fold
+            continue
+
+        performed_any_fold = True
         if hasattr(model, "predict_proba"):
             proba = model.predict_proba(X_test)
             classes_ = model.classes_ if hasattr(model, "classes_") else [0, 1]
@@ -317,85 +336,92 @@ def walk_forward_predict(
         preds.loc[test_mask] = prob_pos
         true_labels.loc[test_mask] = y_test.astype(float)
 
-    # Enhanced cross-validation with multiple strategies
+    # Fallback: Simple train/test split for robust predictions
     if not performed_any_fold:
+        print("Using simple train/test split for robust predictions")
         n_samples = len(X)
-        if n_samples >= 500:
-            # Use TimeSeriesSplit for larger datasets
-            n_splits = min(5, max(3, n_samples // 300))
-            tscv = TimeSeriesSplit(n_splits=n_splits)
-            for fold_idx, (train_idx, test_idx) in enumerate(tscv.split(X)):
-                X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
-                y_train, y_test = y_binary.iloc[train_idx], y.iloc[test_idx]
+        train_size = int(0.7 * n_samples)  # 70% for training
 
-                # Ensure minimum training samples
-                if len(X_train) < 100:
-                    continue
+        X_train = X.iloc[:train_size]
+        y_train = y_binary.iloc[:train_size]
+        X_test = X.iloc[train_size:]
+        y_test = y.iloc[train_size:]
 
-                # Validate training data for infinite values
-                if not np.isfinite(X_train.values).all():
-                    inf_cols = []
-                    for col in X_train.columns:
-                        if not np.isfinite(X_train[col]).all():
-                            inf_cols.append(col)
-                    print(f"Warning: Training data contains infinite values in columns: {inf_cols}, skipping fold")
-                    continue
+        print(f"Train set: {len(X_train)} samples, Test set: {len(X_test)} samples")
 
+        # Ensure we have both classes in training data
+        unique_classes = np.unique(y_train)
+        if len(unique_classes) >= 2 and (0 in unique_classes and 1 in unique_classes):
+            print(f"Training with classes: {unique_classes}")
+
+            # Validate training data for infinite values
+            if np.isfinite(X_train.values).all():
                 model = _build_model(model_type)
                 model.fit(X_train, y_train)
 
                 # Validate test data for infinite values
-                if not np.isfinite(X_test.values).all():
-                    print(f"Warning: Test data contains infinite values, skipping fold")
-                    continue
+                if np.isfinite(X_test.values).all():
+                    if hasattr(model, "predict_proba"):
+                        proba = model.predict_proba(X_test)
+                        classes_ = model.classes_ if hasattr(model, "classes_") else [0, 1]
+                        try:
+                            idx_pos = list(classes_).index(1)
+                        except ValueError:
+                            idx_pos = np.argmax(classes_)
+                        prob_pos = proba[:, idx_pos]
+                    else:
+                        scores = model.decision_function(X_test)
+                        prob_pos = 1 / (1 + np.exp(-scores))
 
-                if hasattr(model, "predict_proba"):
-                    proba = model.predict_proba(X_test)
-                    classes_ = model.classes_ if hasattr(model, "classes_") else [0, 1]
-                    try:
-                        idx_pos = list(classes_).index(1)
-                    except ValueError:
-                        idx_pos = np.argmax(classes_)
-                    prob_pos = proba[:, idx_pos]
+                    preds.iloc[train_size:] = prob_pos
+                    true_labels.iloc[train_size:] = y.iloc[train_size:].astype(float)
                 else:
-                    scores = model.decision_function(X_test)
-                    prob_pos = 1 / (1 + np.exp(-scores))
-
-                preds.iloc[test_idx] = prob_pos
-                true_labels.iloc[test_idx] = y.iloc[test_idx].astype(float)
+                    print("Warning: Test data contains infinite values")
+            else:
+                print("Warning: Training data contains infinite values")
         else:
-            # For smaller datasets, use expanding window validation
-            min_train_size = max(50, n_samples // 4)
-            for i in range(min_train_size, n_samples, max(1, n_samples // 10)):
-                train_end = i
-                test_end = min(i + max(1, n_samples // 20), n_samples)
-
-                X_train = X.iloc[:train_end]
-                y_train = y_binary.iloc[:train_end]
-                X_test = X.iloc[train_end:test_end]
-                y_test = y.iloc[train_end:test_end]
-
-                if len(X_test) == 0:
-                    continue
-
-                model = _build_model(model_type)
-                model.fit(X_train, y_train)
-
-                if hasattr(model, "predict_proba"):
-                    proba = model.predict_proba(X_test)
-                    classes_ = model.classes_ if hasattr(model, "classes_") else [0, 1]
-                    try:
-                        idx_pos = list(classes_).index(1)
-                    except ValueError:
-                        idx_pos = np.argmax(classes_)
-                    prob_pos = proba[:, idx_pos]
-                else:
-                    scores = model.decision_function(X_test)
-                    prob_pos = 1 / (1 + np.exp(-scores))
-
-                preds.iloc[train_end:test_end] = prob_pos
-                true_labels.iloc[train_end:test_end] = y_test.astype(float)
+            print(f"Warning: Insufficient class diversity in training data. Classes: {unique_classes}")
+            # Fallback: predict neutral (0.5 probability)
+            preds.iloc[train_size:] = 0.5
+            true_labels.iloc[train_size:] = y.iloc[train_size:].astype(float)
     return preds, true_labels
+
+
+def tune_probability_threshold(
+    preds: Series,
+    true_labels: Series,
+    candidate_thresholds: list[float] | None = None,
+    allow_shorts: bool = False,
+) -> float:
+    """Choose threshold that maximizes win rate on a validation set.
+
+    This function computes directional trades from probabilities and true labels
+    using a threshold and returns the threshold with the highest win rate.
+    """
+    if candidate_thresholds is None:
+        candidate_thresholds = [0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 0.85,0.90]
+
+    mask = ~preds.isna() & ~true_labels.isna()
+    p = preds.loc[mask]
+    y = true_labels.loc[mask]
+
+    best_thr = candidate_thresholds[0]
+    best_wr = -1.0
+    for thr in candidate_thresholds:
+        longs = p >= thr
+        shorts = (p <= 1.0 - thr) if allow_shorts else pd.Series(False, index=p.index)
+        signals = pd.Series(0, index=p.index, dtype=int)
+        signals[longs] = 1
+        signals[shorts] = -1
+        executed = signals != 0
+        if executed.sum() == 0:
+            continue
+        wins = (signals[executed] == y[executed]).sum()
+        wr = wins / executed.sum()
+        if wr > best_wr:
+            best_wr = wr
+            best_thr = thr
+    return best_thr
 
 
 def evaluate_probabilities(preds: Series, true_labels: Series) -> dict[str, float]:

@@ -110,6 +110,9 @@ def backtest_from_predictions(
     slippage_bps: float = 0.2,    # 0.2 bps slippage (minimal for high win rates)
     cooldown_until_exit: bool = True,
     use_kelly_sizing: bool = True,
+    allow_shorts: bool = True,
+    regime_filter: str | None = None,
+    trend_window: int = 100,
 ) -> dict[str, object]:
     """Run a simple backtest based on predicted probabilities.
 
@@ -166,6 +169,17 @@ def backtest_from_predictions(
     prices = df["close"].to_numpy()
     preds = pred_probs.reindex(df.index)
 
+    # Optional regime filter based on simple moving average trend
+    if regime_filter == "sma":
+        sma = df["close"].rolling(trend_window, min_periods=trend_window//2).mean()
+        long_ok = (df["close"] > sma).fillna(False)
+        short_ok = (df["close"] < sma).fillna(False)
+    else:
+        long_ok = pd.Series(True, index=df.index)
+        short_ok = pd.Series(True, index=df.index)
+    long_ok_arr = long_ok.to_numpy(dtype=bool)
+    short_ok_arr = short_ok.to_numpy(dtype=bool)
+
     equity = 1.0
     equity_curve = [equity]
     trade_returns: list[float] = []
@@ -180,9 +194,11 @@ def backtest_from_predictions(
             i += 1
             continue
         # Determine signal
-        if prob >= threshold:
+        take_long = (prob >= threshold) and long_ok_arr[i]
+        take_short = allow_shorts and (prob <= 1.0 - threshold) and short_ok_arr[i]
+        if take_long:
             direction = 1
-        elif prob <= 1.0 - threshold:
+        elif take_short:
             direction = -1
         else:
             i += 1
