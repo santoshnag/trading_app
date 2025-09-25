@@ -14,8 +14,8 @@ from datetime import datetime
 
 #: Tickers to download and analyse.  These should be liquid US equities or
 # ETFs.  You can add more symbols to this list.  Note that downloading minute
-# bars for many tickers can be time‑consuming.
-TICKERS: list[str] = ["SPY", "AAPL", "MSFT", "TSLA", "NVDA", "GOOGL", "AMZN", "META"]  # Major tech stocks for short-term trading
+# bars for many tickers can be time‑consuming., "MSFT", "TSLA", "NVDA", "GOOGL", "AMZN", "META"
+TICKERS: list[str] = ["SPY", "AAPL"]  # Major tech stocks for short-term trading
 
 #: The start and end dates for data collection.  Data outside this range will
 # not be downloaded.  Use ISO‑8601 strings (YYYY‑MM‑DD).
@@ -49,47 +49,32 @@ DATA_DIR: str = "data/raw"
 # available features.  Removing features from this list will speed up
 # computation and may reduce overfitting.
 # Optimized feature set - reduced from 37 to 20 high-signal features
+# Optimized feature set for 70%+ win rates - focused on most predictive indicators
 FEATURE_LIST: list[str] = [
-    # Returns and Momentum (daily basis)
-    "return_1d", "return_3d", "return_5d", "return_10d", "return_20d",
-    "momentum_1d", "momentum_5d", "momentum_10d", "momentum_accel",
+    # Core Returns (most important for prediction)
+    "return_1d", "return_5d", "return_10d", "return_20d",
+    "momentum_5d", "momentum_10d", "momentum_accel",
 
-    # Moving Averages (multiple timeframes)
-    "sma_5", "sma_10", "sma_20", "sma_50", "sma_200",
-    "ema_5", "ema_10", "ema_20", "ema_50", "ema_200",
-    "wma_10", "wma_20",
+    # Key Moving Averages (avoid redundancy)
+    "sma_20", "sma_50", "ema_20", "ema_50",
 
-    # Oscillators and Momentum Indicators
-    "rsi_6", "rsi_14", "rsi_21",
-    "stoch_k", "stoch_d",
-    "williams_r", "cci_14", "cci_20",
-    "macd", "macd_signal", "macd_hist",
-    "mfi_14",
+    # Essential Oscillators (RSI and MACD are most predictive)
+    "rsi_14", "macd", "macd_signal", "macd_hist",
 
-    # Volatility Indicators
-    "atr_14", "atr_20",
-    "bb_upper_20", "bb_middle_20", "bb_lower_20", "bb_pct_20", "bb_width_20",
-    "bb_upper_10", "bb_middle_10", "bb_lower_10", "bb_pct_10", "bb_width_10",
-    "keltner_upper_20", "keltner_middle_20", "keltner_lower_20", "keltner_pct_20",
+    # Volatility (ATR and Bollinger Bands most useful)
+    "atr_14", "bb_upper_20", "bb_lower_20", "bb_pct_20",
 
-    # Volume Indicators
-    "volume_sma_5", "volume_sma_10", "volume_sma_20",
-    "volume_ratio_5", "volume_ratio_10", "volume_ratio_20",
-    "vwap", "vwap_dist",
-    "accumulation_distribution", "chaikin_money_flow",
-    "force_index", "ease_of_movement", "volume_price_trend",
+    # Volume (keep essential ones)
+    "volume_ratio_10", "volume_ratio_20", "vwap_dist",
 
-    # Trend Indicators (ADX, Aroon - simpler versions)
+    # Trend Strength (ADX most important)
     "adx_14", "dmi_plus_14", "dmi_minus_14",
-    "aroon_up_14", "aroon_down_14",
 
-    # Statistical Indicators
-    "hurst_100",
-    "zscore_20", "skew_20", "kurtosis_20",
+    # Statistical (Z-score most useful for mean reversion)
+    "zscore_20",
 
-    # Time-based features
+    # Time-based (seasonal patterns)
     "day_of_week", "month_of_year",
-    "days_since_high_20", "days_since_low_20",
 ]
 
 ###############################################################################
@@ -98,11 +83,11 @@ FEATURE_LIST: list[str] = [
 
 #: Profit‑taking threshold for the triple barrier method.  Expressed as a
 # fraction of the entry price.  For example, 0.005 corresponds to a 0.5 % move.
-PROFIT_TAKE: float = 0.05  # 5% profit target for daily swing trading
+PROFIT_TAKE: float = 0.08  # 8% profit target for high win rates
 
 #: Stop‑loss threshold for the triple barrier method.  Expressed as a fraction
 # of the entry price.  For example, 0.005 corresponds to a 0.5 % move.
-STOP_LOSS: float = 0.025  # 2.5% stop loss for daily swing trading
+STOP_LOSS: float = 0.03  # 3% stop loss for daily swing trading
 
 #: Maximum holding period for each trade in minutes.  A vertical barrier will
 # be placed at this horizon.  Trades that do not hit either the profit target
@@ -127,7 +112,7 @@ TRAIN_WINDOW_MONTHS: int = 6  # Balanced training window
 # backtest.  Only predictions above this threshold will be considered long
 # signals, and predictions below (1 – threshold) will be considered short
 # signals.
-SIGNAL_THRESHOLD: float = 0.75  # High confidence threshold for elite win rates
+SIGNAL_THRESHOLD: float = 0.40  # Lower threshold to maximize trades for higher win rates
 
 #: Maximum number of concurrent positions allowed in the portfolio backtest.
 MAX_POSITIONS: int = 5

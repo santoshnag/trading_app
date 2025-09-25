@@ -48,6 +48,7 @@ except ImportError:
     LGBMClassifier = None  # type: ignore
 
 from sklearn.ensemble import StackingClassifier
+from sklearn.feature_selection import SelectKBest, f_classif
 
 # Import config with fallback for both package and script execution
 try:
@@ -123,60 +124,81 @@ def _build_model(model_type: str) -> object:
             )),
         ])
     elif model_type == "ensemble":
-        # Stacking ensemble with multiple models
+        # Advanced ensemble with feature selection for 70%+ win rates
         base_estimators = []
+
+        # Base pipeline with feature selection
+        base_pipeline = Pipeline([
+            ("scaler", StandardScaler()),
+            ("selector", SelectKBest(score_func=f_classif, k=15)),  # Select top 15 most predictive features
+        ])
+
         if True:  # Always include logistic
-            base_estimators.append(("logistic", Pipeline([
+            logistic_pipeline = Pipeline([
                 ("scaler", StandardScaler()),
+                ("selector", SelectKBest(score_func=f_classif, k=15)),
                 ("clf", LogisticRegression(
                     penalty="l2",
-                    C=1.0,
+                    C=0.5,  # More regularization
                     class_weight="balanced",
                     solver="lbfgs",
                     max_iter=500,
+                    random_state=42,
                 )),
-            ])))
+            ])
+            base_estimators.append(("logistic", logistic_pipeline))
+
         if XGBClassifier is not None:
-            base_estimators.append(("xgboost", Pipeline([
+            xgb_pipeline = Pipeline([
                 ("scaler", StandardScaler()),
+                ("selector", SelectKBest(score_func=f_classif, k=15)),
                 ("clf", XGBClassifier(
-                    n_estimators=150,
-                    max_depth=3,
-                    learning_rate=0.05,
-                    subsample=0.9,
-                    colsample_bytree=0.9,
-                    gamma=0.2,
-                    min_child_weight=5,
-                    reg_alpha=0.1,
-                    reg_lambda=2.0,
-                    scale_pos_weight=3.0,
+                    n_estimators=80,  # Optimized for speed and accuracy
+                    max_depth=2,  # Shallower for less overfitting
+                    learning_rate=0.05,  # Balanced learning rate
+                    subsample=0.8,  # Good regularization
+                    colsample_bytree=0.8,
+                    gamma=0.2,  # Moderate gamma
+                    min_child_weight=8,  # Balanced
+                    reg_alpha=0.3,  # Moderate L1 regularization
+                    reg_lambda=3.0,  # Moderate L2 regularization
+                    scale_pos_weight=3.0,  # Higher weight for minority class
                     eval_metric="logloss",
                     tree_method="hist",
                     n_jobs=0,
                     random_state=42,
                 )),
-            ])))
+            ])
+            base_estimators.append(("xgboost", xgb_pipeline))
+
         if LGBMClassifier is not None:
-            base_estimators.append(("lightgbm", Pipeline([
+            lgb_pipeline = Pipeline([
                 ("scaler", StandardScaler()),
+                ("selector", SelectKBest(score_func=f_classif, k=15)),
                 ("clf", LGBMClassifier(
-                    n_estimators=200,
-                    max_depth=4,
-                    learning_rate=0.05,
-                    subsample=0.8,
+                    n_estimators=60,  # Optimized for speed
+                    max_depth=2,  # Shallower trees
+                    learning_rate=0.05,  # Balanced learning rate
+                    subsample=0.8,  # Good regularization
                     colsample_bytree=0.8,
+                    reg_alpha=0.2,  # Moderate L1 regularization
+                    reg_lambda=2.0,  # Moderate L2 regularization
+                    min_child_samples=15,  # Balanced splits
                     n_jobs=0,
                     verbose=-1,
+                    random_state=42,
                 )),
-            ])))
+            ])
+            base_estimators.append(("lightgbm", lgb_pipeline))
 
         # Meta-learner: Logistic regression on base model predictions
         meta_learner = LogisticRegression(
             penalty="l2",
-            C=1.0,
+            C=0.5,  # More regularization for meta-learner
             class_weight="balanced",
             solver="lbfgs",
             max_iter=500,
+            random_state=42,
         )
 
         return StackingClassifier(

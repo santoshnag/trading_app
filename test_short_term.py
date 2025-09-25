@@ -62,45 +62,10 @@ try:
     X = X.loc[mask]
     y = y.loc[mask]
 
-    print(f"\nTraining on {len(X)} daily samples...")
+    print(f"\nTraining on {len(X)} daily samples using walk-forward validation...")
 
-    # Use simple train/test split for more predictions
-    from sklearn.model_selection import train_test_split
-    from sklearn.preprocessing import StandardScaler
-    from sklearn.linear_model import LogisticRegression
-    from xgboost import XGBClassifier
-
-    # Split data (80% train, 20% test) - smaller for faster testing
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False, random_state=42)
-
-    # Convert to binary for training
-    y_train_binary = (y_train == 1).astype(int)
-    y_test_binary = (y_test == 1).astype(int)
-
-    print(f"   Train set: {len(X_train)} samples")
-    print(f"   Test set: {len(X_test)} samples")
-
-    # Use Logistic Regression for fast testing
-    model = LogisticRegression(
-        penalty="l2", C=1.0, class_weight="balanced",
-        solver="lbfgs", max_iter=500, random_state=42
-    )
-
-    # Train model
-    scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_test_scaled = scaler.transform(X_test)
-
-    model.fit(X_train_scaled, y_train_binary)
-
-    # Get predictions
-    if hasattr(model, 'predict_proba'):
-        proba = model.predict_proba(X_test_scaled)
-        preds = pd.Series(proba[:, 1], index=X_test.index)
-        true_labels = y_test_binary
-    else:
-        preds = pd.Series(model.decision_function(X_test_scaled), index=X_test.index)
-        true_labels = y_test_binary
+    # Use proper walk-forward validation for better generalization
+    preds, true_labels = walk_forward_predict(X, y, X.index)
 
     pred_metrics = evaluate_probabilities(preds, true_labels)
     print("\nModel Performance:")
@@ -114,7 +79,7 @@ try:
     print(f"   Average prediction: {preds.mean():.3f}")
     print(f"   Max prediction: {preds.max():.3f}")
 
-    backtest_res = backtest_from_predictions(df.loc[preds.index], preds)
+    backtest_res = backtest_from_predictions(df.loc[preds.index], preds.reindex(df.loc[preds.index].index))
     stats = backtest_res["stats"]
 
     win_rate = stats.get('win_rate', 0)
