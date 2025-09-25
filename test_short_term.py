@@ -70,8 +70,8 @@ try:
     from sklearn.linear_model import LogisticRegression
     from xgboost import XGBClassifier
 
-    # Split data (70% train, 30% test)
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, shuffle=False, random_state=42)
+    # Split data (80% train, 20% test) - smaller for faster testing
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, shuffle=False, random_state=42)
 
     # Convert to binary for training
     y_train_binary = (y_train == 1).astype(int)
@@ -80,18 +80,11 @@ try:
     print(f"   Train set: {len(X_train)} samples")
     print(f"   Test set: {len(X_test)} samples")
 
-    # Train ensemble model
-    if config.MODEL_TYPE == "ensemble":
-        # Use Logistic Regression for better performance on this dataset
-        model = LogisticRegression(
-            penalty="l2", C=1.0, class_weight="balanced",
-            solver="lbfgs", max_iter=1000, random_state=42
-        )
-    else:
-        model = LogisticRegression(
-            penalty="l2", C=1.0, class_weight="balanced",
-            solver="lbfgs", max_iter=1000, random_state=42
-        )
+    # Use Logistic Regression for fast testing
+    model = LogisticRegression(
+        penalty="l2", C=1.0, class_weight="balanced",
+        solver="lbfgs", max_iter=500, random_state=42
+    )
 
     # Train model
     scaler = StandardScaler()

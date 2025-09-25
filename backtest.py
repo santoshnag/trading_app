@@ -194,7 +194,7 @@ def backtest_from_predictions(
             direction=direction,
             profit_take=profit_take,
             stop_loss=stop_loss,
-            max_horizon=max_minutes,
+            max_horizon=max_periods,
         )
 
         # Dynamic position sizing
@@ -231,7 +231,7 @@ def backtest_from_predictions(
         trade_pnl.append(pnl)
         # If cooling down until exit, jump index to approximate exit bar
         if cooldown_until_exit:
-            i = min(i + max_minutes, len(preds_arr))
+            i = min(i + max_periods, len(preds_arr))
         else:
             i += 1
     # Prepare results
