@@ -104,7 +104,7 @@ def backtest_from_predictions(
     threshold: float | None = None,
     profit_take: float | None = None,
     stop_loss: float | None = None,
-    max_minutes: int | None = None,
+    max_periods: int | None = None,
     risk_per_trade: float | None = None,
     fixed_cost: float = 0.00005,  # 0.005% commission (minimal for high win rates)
     slippage_bps: float = 0.2,    # 0.2 bps slippage (minimal for high win rates)
@@ -135,9 +135,9 @@ def backtest_from_predictions(
     stop_loss : float, optional
         Stop loss threshold as fraction of entry price.  Defaults to
         ``config.STOP_LOSS``.
-    max_minutes : int, optional
-        Maximum holding period in bars.  Defaults to
-        ``config.MAX_HOLD_MINUTES``.
+    max_periods : int, optional
+        Maximum holding period in bars/days.  Defaults to
+        ``config.MAX_HOLD_DAYS``.
     risk_per_trade : float, optional
         Fraction of equity to risk on each trade.  Defaults to
         ``config.RISK_PER_TRADE``.
@@ -158,8 +158,8 @@ def backtest_from_predictions(
         profit_take = config.PROFIT_TAKE
     if stop_loss is None:
         stop_loss = config.STOP_LOSS
-    if max_minutes is None:
-        max_minutes = config.MAX_HOLD_MINUTES
+    if max_periods is None:
+        max_periods = getattr(config, 'MAX_HOLD_DAYS', 20)
     if risk_per_trade is None:
         risk_per_trade = config.RISK_PER_TRADE
 

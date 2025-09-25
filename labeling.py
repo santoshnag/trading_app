@@ -46,7 +46,7 @@ except Exception:  # pragma: no cover
     njit = None  # type: ignore
 
 
-def _triple_barrier_numba(prices: np.ndarray, profit_take: float, stop_loss: float, max_minutes: int) -> np.ndarray:
+def _triple_barrier_numba(prices: np.ndarray, profit_take: float, stop_loss: float, max_periods: int) -> np.ndarray:
     """Numba-accelerated triple barrier labeling over a price array.
 
     Returns float array with values {1.0, 0.0, -1.0, nan}.
@@ -93,7 +93,7 @@ def triple_barrier_labels(
     price: Series,
     profit_take: float | None = None,
     stop_loss: float | None = None,
-    max_minutes: int | None = None,
+    max_periods: int | None = None,
 ) -> Series:
     """Generate triple barrier labels for a price series.
 
@@ -128,13 +128,13 @@ def triple_barrier_labels(
         profit_take = config.PROFIT_TAKE
     if stop_loss is None:
         stop_loss = config.STOP_LOSS
-    if max_minutes is None:
-        max_minutes = config.MAX_HOLD_MINUTES
+    if max_periods is None:
+        max_periods = getattr(config, 'MAX_HOLD_DAYS', 20)  # Default to 20 days
 
     prices = price.to_numpy(dtype=float)
     try:
         if njit is not None:
-            labels = _triple_barrier_numba(prices, float(profit_take), float(stop_loss), int(max_minutes))
+            labels = _triple_barrier_numba(prices, float(profit_take), float(stop_loss), int(max_periods))
         else:
             raise RuntimeError
     except Exception:
@@ -143,7 +143,7 @@ def triple_barrier_labels(
         labels = np.full(n, np.nan, dtype=float)
         for idx in range(n):
             entry_price = prices[idx]
-            end_idx = idx + max_minutes if max_minutes > 0 else n
+            end_idx = idx + max_periods if max_periods > 0 else n
             if end_idx > n:
                 end_idx = n
             if idx + 1 >= end_idx:
@@ -192,5 +192,5 @@ def generate_labels_for_dataframe(df: pd.DataFrame) -> Series:
         price,
         profit_take=config.PROFIT_TAKE,
         stop_loss=config.STOP_LOSS,
-        max_minutes=config.MAX_HOLD_MINUTES,
+        max_periods=getattr(config, 'MAX_HOLD_DAYS', 20),
     )

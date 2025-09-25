@@ -61,7 +61,7 @@ FEATURE_LIST: list[str] = [
 
     # Oscillators and Momentum Indicators
     "rsi_6", "rsi_14", "rsi_21",
-    "stoch_k", "stoch_d", "stoch_rsi",
+    "stoch_k", "stoch_d",
     "williams_r", "cci_14", "cci_20",
     "macd", "macd_signal", "macd_hist",
     "mfi_14",
@@ -79,21 +79,16 @@ FEATURE_LIST: list[str] = [
     "accumulation_distribution", "chaikin_money_flow",
     "force_index", "ease_of_movement", "volume_price_trend",
 
-    # Trend and Support/Resistance
+    # Trend Indicators (ADX, Aroon - simpler versions)
     "adx_14", "dmi_plus_14", "dmi_minus_14",
-    "aroon_up_14", "aroon_down_14", "aroon_osc_14",
-    "ichimoku_tenkan", "ichimoku_kijun", "ichimoku_senkou_a", "ichimoku_senkou_b",
-    "pivot_point", "resistance_1", "support_1",
+    "aroon_up_14", "aroon_down_14",
 
     # Statistical Indicators
-    "hurst_100", "hurst_200",
+    "hurst_100",
     "zscore_20", "skew_20", "kurtosis_20",
 
-    # Market Breadth (using SPY as proxy)
-    "market_trend_5", "market_trend_20", "market_strength",
-
     # Time-based features
-    "day_of_week", "month_of_year", "quarter",
+    "day_of_week", "month_of_year",
     "days_since_high_20", "days_since_low_20",
 ]
 

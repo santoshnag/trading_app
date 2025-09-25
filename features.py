@@ -430,37 +430,12 @@ def compute_features(df: DataFrame, feature_list: list[str] | None = None) -> Da
             features["dmi_minus_14"] = adx_ind.adx_neg()
 
     # Aroon Oscillator
-    if "aroon_up_14" in feature_list or "aroon_down_14" in feature_list or "aroon_osc_14" in feature_list:
-        aroon = ta.trend.AroonIndicator(close=close, window=14)
+    if "aroon_up_14" in feature_list or "aroon_down_14" in feature_list:
+        aroon = ta.trend.AroonIndicator(high=high, low=low, window=14)
         if "aroon_up_14" in feature_list:
             features["aroon_up_14"] = aroon.aroon_up()
         if "aroon_down_14" in feature_list:
             features["aroon_down_14"] = aroon.aroon_down()
-        if "aroon_osc_14" in feature_list:
-            features["aroon_osc_14"] = aroon.aroon_indicator()
-
-    # Ichimoku Cloud
-    if any(x in feature_list for x in ["ichimoku_tenkan", "ichimoku_kijun", "ichimoku_senkou_a", "ichimoku_senkou_b"]):
-        ichimoku = ta.trend.IchimokuIndicator(high=high, low=low, window1=9, window2=26, window3=52)
-        if "ichimoku_tenkan" in feature_list:
-            features["ichimoku_tenkan"] = ichimoku.ichimoku_conversion_line()
-        if "ichimoku_kijun" in feature_list:
-            features["ichimoku_kijun"] = ichimoku.ichimoku_base_line()
-        if "ichimoku_senkou_a" in feature_list:
-            features["ichimoku_senkou_a"] = ichimoku.ichimoku_a()
-        if "ichimoku_senkou_b" in feature_list:
-            features["ichimoku_senkou_b"] = ichimoku.ichimoku_b()
-
-    # Pivot Points
-    if "pivot_point" in feature_list or "resistance_1" in feature_list or "support_1" in feature_list:
-        # Calculate pivot point using previous day's data
-        pp = (high.shift(1) + low.shift(1) + close.shift(1)) / 3
-        if "pivot_point" in feature_list:
-            features["pivot_point"] = pp
-        if "resistance_1" in feature_list:
-            features["resistance_1"] = 2 * pp - low.shift(1)
-        if "support_1" in feature_list:
-            features["support_1"] = 2 * pp - high.shift(1)
 
     # Volume Indicators
     if "volume_sma_5" in feature_list:
@@ -527,162 +502,13 @@ def compute_features(df: DataFrame, feature_list: list[str] | None = None) -> Da
             features["quarter"] = close.index.quarter / 4.0  # Normalize to 0-1
 
     if "days_since_high_20" in feature_list:
+        # Days since 20-day high (simplified)
         rolling_max = close.rolling(window=20).max()
-        features["days_since_high_20"] = ((close - rolling_max).abs() / rolling_max).rolling(window=20).argmin()
+        features["days_since_high_20"] = (close == rolling_max).astype(int).rolling(window=20).sum()
     if "days_since_low_20" in feature_list:
+        # Days since 20-day low (simplified)
         rolling_min = close.rolling(window=20).min()
-        features["days_since_low_20"] = ((close - rolling_min).abs() / rolling_min).rolling(window=20).argmin()
-        features["vol_of_vol_30m"] = vol_series.rolling(window=30, min_periods=1).std().fillna(0)
-
-    # Volume & flow
-    if "obv" in feature_list:
-        obv_ind = ta.volume.OnBalanceVolumeIndicator(close=close, volume=volume)
-        features["obv"] = obv_ind.on_balance_volume()
-    if "vwap_dist" in feature_list:
-        features["vwap_dist"] = _compute_vwap_distance(df)
-    if "rel_volume_5m" in feature_list:
-        features["rel_volume_5m"] = _compute_rel_volume(df, window=5)
-    if "rel_volume_15m" in feature_list:
-        features["rel_volume_15m"] = _compute_rel_volume(df, window=15)
-    if "volume_ma_ratio_5m" in feature_list:
-        vol_ma = volume.rolling(window=5).mean()
-        # Avoid division by zero, replace with 1.0 for neutral ratio
-        vol_ma_safe = vol_ma.replace(0, 1.0)
-        ratio = volume / vol_ma_safe
-        features["volume_ma_ratio_5m"] = ratio.clip(0.1, 10.0)  # Reasonable bounds
-    if "volume_ma_ratio_15m" in feature_list:
-        vol_ma = volume.rolling(window=15).mean()
-        # Avoid division by zero, replace with 1.0 for neutral ratio
-        vol_ma_safe = vol_ma.replace(0, 1.0)
-        ratio = volume / vol_ma_safe
-        features["volume_ma_ratio_15m"] = ratio.clip(0.1, 10.0)  # Reasonable bounds
-
-    if "volume_momentum" in feature_list:
-        # Volume momentum: rate of change of volume
-        vol_change = volume.pct_change(5)
-        # Handle infinite values from division by zero
-        features["volume_momentum"] = vol_change.replace([np.inf, -np.inf], 0).fillna(0)
-
-    # Order flow indicators
-    if "price_volume_trend" in feature_list:
-        features["price_volume_trend"] = ((close - close.shift(1)) / close.shift(1)) * volume
-        features["price_volume_trend"] = features["price_volume_trend"].fillna(0).cumsum()
-    if "accumulation_distribution" in feature_list:
-        ad_ind = ta.volume.AccDistIndexIndicator(high=high, low=low, close=close, volume=volume)
-        features["accumulation_distribution"] = ad_ind.acc_dist_index()
-    if "chaikin_money_flow" in feature_list:
-        cmf_ind = ta.volume.ChaikinMoneyFlowIndicator(high=high, low=low, close=close, volume=volume, window=20)
-        features["chaikin_money_flow"] = cmf_ind.chaikin_money_flow()
-
-    # Momentum indicators
-    if "stochastic_k" in feature_list or "stochastic_d" in feature_list:
-        stoch_ind = ta.momentum.StochasticOscillator(high=high, low=low, close=close, window=14, smooth_window=3)
-        if "stochastic_k" in feature_list:
-            features["stochastic_k"] = stoch_ind.stoch()
-        if "stochastic_d" in feature_list:
-            features["stochastic_d"] = stoch_ind.stoch_signal()
-    if "williams_r" in feature_list:
-        williams_ind = ta.momentum.WilliamsRIndicator(high=high, low=low, close=close, lbp=14)
-        features["williams_r"] = williams_ind.williams_r()
-    if "cci_14" in feature_list:
-        cci_ind = ta.trend.CCIIndicator(high=high, low=low, close=close, window=14)
-        features["cci_14"] = cci_ind.cci()
-
-    # Mean reversion indicators - Custom implementation to avoid NaN issues
-    if "bollinger_upper" in feature_list or "bollinger_lower" in feature_list or "bollinger_middle" in feature_list or "bollinger_pct" in feature_list:
-        # Custom Bollinger Bands calculation
-        window = 20
-        std_dev = 2
-        rolling_mean = close.rolling(window=window, min_periods=1).mean()
-        rolling_std = close.rolling(window=window, min_periods=1).std()
-
-        if "bollinger_upper" in feature_list:
-            features["bollinger_upper"] = rolling_mean + (rolling_std * std_dev)
-        if "bollinger_lower" in feature_list:
-            features["bollinger_lower"] = rolling_mean - (rolling_std * std_dev)
-        if "bollinger_middle" in feature_list:
-            features["bollinger_middle"] = rolling_mean
-        if "bollinger_pct" in feature_list:
-            # Position within bands: (price - lower) / (upper - lower)
-            upper = rolling_mean + (rolling_std * std_dev)
-            lower = rolling_mean - (rolling_std * std_dev)
-            band_width = upper - lower
-
-            # Calculate percentage position safely
-            with np.errstate(divide='ignore', invalid='ignore'):
-                pct = (close - lower) / band_width
-
-            # Replace inf/-inf/NaN with reasonable values
-            pct = pct.replace([np.inf, -np.inf], [2.0, -2.0]).fillna(0.0)
-            # Clip to reasonable bounds (-2 to +2 is more than enough)
-            features["bollinger_pct"] = pct.clip(-2.0, 2.0)
-
-    if "keltner_upper" in feature_list or "keltner_lower" in feature_list or "keltner_pct" in feature_list:
-        keltner_ind = ta.volatility.KeltnerChannel(high=high, low=low, close=close, window=20, window_atr=10)
-        if "keltner_upper" in feature_list:
-            features["keltner_upper"] = keltner_ind.keltner_channel_hband()
-        if "keltner_lower" in feature_list:
-            features["keltner_lower"] = keltner_ind.keltner_channel_lband()
-        if "keltner_pct" in feature_list:
-            # Position within Keltner channel
-            middle = (keltner_ind.keltner_channel_hband() + keltner_ind.keltner_channel_lband()) / 2
-            features["keltner_pct"] = (close - middle) / (keltner_ind.keltner_channel_hband() - middle)
-
-    # Regime detection
-    if "hurst_120m" in feature_list:
-        # Use logarithmic returns for Hurst exponent
-        log_ret = np.log(close / close.shift(1))
-        features["hurst_120m"] = _calculate_hurst_exponent(log_ret.fillna(0), window=120)
-    if "shannon_entropy_30m" in feature_list:
-        log_ret = np.log(close / close.shift(1))
-        features["shannon_entropy_30m"] = _shannon_entropy(log_ret.fillna(0), window=30, bins=10)
-    if "realized_volatility_30m" in feature_list:
-        log_ret = np.log(close / close.shift(1)).fillna(0)
-        features["realized_volatility_30m"] = (log_ret.rolling(window=30, min_periods=1).std() * np.sqrt(252)).fillna(0)  # Annualized
-    if "jump_variation_30m" in feature_list:
-        # Jump variation: difference between realized variance and bipower variation
-        log_ret = np.log(close / close.shift(1)).fillna(0)
-        rv = (log_ret ** 2).rolling(window=30, min_periods=1).sum()
-        bv = (abs(log_ret).rolling(window=30, min_periods=1).sum() ** 2) / 30
-        features["jump_variation_30m"] = (rv - bv).fillna(0)
-
-    # Time of day
-    if "sin_time" in feature_list or "cos_time" in feature_list:
-        sin_time, cos_time = _sin_cos_time_of_day(df.index)
-        if "sin_time" in feature_list:
-            features["sin_time"] = sin_time
-        if "cos_time" in feature_list:
-            features["cos_time"] = cos_time
-    if "market_phase" in feature_list:
-        # Market phase: 0=pre-market, 1=regular hours, 2=after-hours
-        est = df.index.tz_convert("America/New_York")
-        hour = est.hour
-        minute = est.minute
-        time_minutes = hour * 60 + minute
-        market_phase = np.zeros(len(df), dtype=int)
-        market_phase[(time_minutes >= 570) & (time_minutes <= 960)] = 1  # Regular hours 9:30-16:00
-        market_phase[(time_minutes >= 960) & (time_minutes <= 1200)] = 2  # After hours
-        features["market_phase"] = pd.Series(market_phase, index=df.index)
-
-    # Handle NaN values robustly
-    # Fill NaN values with appropriate strategies
-    for col in features.columns:
-        if features[col].isna().any():
-            # For momentum/oscillator features, fill with 0 (neutral)
-            if any(keyword in col.lower() for keyword in ['stoch', 'williams', 'cci', 'rsi']):
-                features[col] = features[col].fillna(0)
-            # For volatility features, forward fill then fill remaining with 0
-            elif any(keyword in col.lower() for keyword in ['vol', 'hurst', 'entropy']):
-                features[col] = features[col].ffill().fillna(0)
-            # For volume-based features, fill with 1 (neutral ratio)
-            elif any(keyword in col.lower() for keyword in ['volume', 'rel_vol', 'vwap']):
-                features[col] = features[col].fillna(1.0)
-            # For price-based features, forward fill
-            elif any(keyword in col.lower() for keyword in ['ema', 'bollinger', 'keltner']):
-                features[col] = features[col].ffill()
-            # Default: fill with 0
-            else:
-                features[col] = features[col].fillna(0)
+        features["days_since_low_20"] = (close == rolling_min).astype(int).rolling(window=20).sum()
 
     # Aggressive cleanup of infinite values throughout features
     def clean_feature_series(series, name, bounds=(-10, 10)):
@@ -747,3 +573,73 @@ def compute_features(df: DataFrame, feature_list: list[str] | None = None) -> Da
 
     print(f"Feature cleanup complete. Final shape: {features.shape}")
     return features
+
+
+# Helper functions for advanced technical indicators
+
+def _calculate_hurst_exponent(price_series, window=100):
+    """Calculate Hurst exponent for regime detection."""
+    if len(price_series) < window:
+        return pd.Series([0.5] * len(price_series), index=price_series.index)
+
+    def _hurst_rs(series):
+        """Rescaled range analysis for Hurst exponent."""
+        if len(series) < 10:
+            return 0.5
+
+        # Calculate cumulative sum of deviations from mean
+        mean = series.mean()
+        cum_dev = (series - mean).cumsum()
+
+        # Range
+        R = cum_dev.max() - cum_dev.min()
+
+        # Standard deviation
+        S = series.std()
+
+        if S == 0:
+            return 0.5
+
+        # R/S statistic
+        RS = R / S
+
+        # Hurst exponent approximation
+        # H ≈ log(R/S) / log(N/2)
+        N = len(series)
+        if N > 1:
+            H = np.log(RS) / np.log(N / 2)
+            # Clamp to reasonable bounds
+            H = np.clip(H, 0.0, 1.0)
+        else:
+            H = 0.5
+
+        return H
+
+    # Rolling Hurst exponent
+    hurst_values = []
+    for i in range(len(price_series)):
+        if i < window - 1:
+            hurst_values.append(0.5)  # Default random walk
+        else:
+            window_data = price_series.iloc[i-window+1:i+1]
+            hurst_values.append(_hurst_rs(window_data))
+
+    return pd.Series(hurst_values, index=price_series.index)
+
+
+def _compute_vwap(high, low, close, volume):
+    """Calculate Volume Weighted Average Price (VWAP)."""
+    # VWAP = sum(price * volume) / sum(volume) for each period
+    # For daily VWAP, we need cumulative calculation
+    typical_price = (high + low + close) / 3
+    cum_vol = volume.cumsum()
+    cum_vol_price = (typical_price * volume).cumsum()
+
+    vwap = cum_vol_price / cum_vol.replace(0, 1)  # Avoid division by zero
+
+    return vwap
+
+
+def _calculate_ema(series, span):
+    """Calculate Exponential Moving Average."""
+    return series.ewm(span=span, adjust=False).mean()
